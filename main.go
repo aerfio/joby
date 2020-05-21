@@ -10,16 +10,16 @@ import (
 	"os"
 
 	"cloud.google.com/go/pubsub"
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	controllerruntime "sigs.k8s.io/controller-runtime"
 )
 
 func main() {
-	path := os.Getenv("KUBE")
 	projectID := os.Getenv("PROJECT_ID")
 	topicID := os.Getenv("TOPIC_ID")
 
@@ -27,10 +27,7 @@ func main() {
 		log.Fatal("please provide proper config")
 	}
 
-	config, err := newRestClientConfig(path)
-	if err != nil {
-		panic(err.Error())
-	}
+	config := controllerruntime.GetConfigOrDie()
 
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -50,7 +47,7 @@ func main() {
 			log.Fatal(err)
 		}
 
-		req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Namespace, &v1.PodLogOptions{
+		req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Namespace, &corev1.PodLogOptions{
 			Container: container,
 		})
 
@@ -76,7 +73,7 @@ func main() {
 	}
 }
 
-func getTestContainerName(pod v1.Pod) (string, error) {
+func getTestContainerName(pod corev1.Pod) (string, error) {
 	names := []string{}
 	for _, cont := range pod.Spec.Containers {
 		if cont.Name != "istio-proxy" {
