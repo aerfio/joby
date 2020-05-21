@@ -15,7 +15,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	controllerruntime "sigs.k8s.io/controller-runtime"
 )
 
@@ -109,13 +108,6 @@ func publish(w io.Writer, projectID, topicID string, attributes map[string]strin
 	}
 	_, err = fmt.Fprintf(w, "Published a message; msg ID: %v\n", id)
 	return err
-}
-
-func newRestClientConfig(kubeconfigPath string) (*restclient.Config, error) {
-	if kubeconfigPath != "" {
-		return clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	}
-	return restclient.InClusterConfig()
 }
 
 // DefaultConsumeRequest reads the data from request and writes into
