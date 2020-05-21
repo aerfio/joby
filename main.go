@@ -6,24 +6,35 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 
 	"cloud.google.com/go/pubsub"
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
 	controllerruntime "sigs.k8s.io/controller-runtime"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
+var log logr.Logger
+
+func init() {
+	logf.SetLogger(zap.New())
+	log = logf.Log.WithName("log-exporter")
+}
+
 func main() {
+
 	projectID := os.Getenv("PROJECT_ID")
 	topicID := os.Getenv("TOPIC_ID")
 
 	if len(projectID) == 0 || len(topicID) == 0 {
-		log.Fatal("please provide proper config")
+		log.Info("please provide proper config")
+		os.Exit(1)
 	}
 
 	config := controllerruntime.GetConfigOrDie()
@@ -43,22 +54,27 @@ func main() {
 	for _, pod := range pods.Items {
 		container, err := getTestContainerName(pod)
 		if err != nil {
-			log.Fatal(err)
+			log.Error(err, "couldnt get test container name")
+			os.Exit(1)
 		}
 
-		req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Namespace, &corev1.PodLogOptions{
+		req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: container,
 		})
 
 		var b bytes.Buffer
 
 		if err := DefaultConsumeRequest(req, &b); err != nil {
-			log.Fatal(err.Error())
+			log.Error(err, "couldnt read request")
+			log.Info(pod.Name)
+			log.Info(container)
+			os.Exit(1)
 		}
 
 		val, ok := pod.Labels["testing.kyma-project.io/def-name"]
 		if !ok {
-			log.Fatal("there's no `testing.kyma-project.io/def-name` on a pod")
+			log.Info("there's no `testing.kyma-project.io/def-name` on a pod")
+			os.Exit(1)
 		}
 
 		attr := map[string]string{
@@ -67,7 +83,8 @@ func main() {
 
 		err = publish(os.Stdout, projectID, topicID, attr, b.Bytes())
 		if err != nil {
-			log.Fatal(err.Error())
+			log.Error(err, "while publishing msg")
+			os.Exit(1)
 		}
 	}
 }
@@ -106,8 +123,9 @@ func publish(w io.Writer, projectID, topicID string, attributes map[string]strin
 	if err != nil {
 		return fmt.Errorf("Get: %v", err)
 	}
-	_, err = fmt.Fprintf(w, "Published a message; msg ID: %v\n", id)
-	return err
+
+	log.Info("Published a message", "message", string(msg)[:50], "id", id)
+	return nil
 }
 
 // DefaultConsumeRequest reads the data from request and writes into
