@@ -7,9 +7,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"cloud.google.com/go/pubsub"
-	"github.com/go-logr/logr"
+	logf "github.com/sirupsen/logrus"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/tools/clientcmd"
+
+	"github.com/aerfio/joblogs/pkg/resources/clustertestsuite"
+
 	"github.com/pkg/errors"
 	"github.com/vrischmann/envconfig"
 	corev1 "k8s.io/api/core/v1"
@@ -17,22 +23,17 @@ import (
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
-	ctrl "sigs.k8s.io/controller-runtime"
-	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
-var logf logr.Logger
+func init() {
+	logf.SetFormatter(&logf.JSONFormatter{})
+	logf.SetOutput(os.Stdout)
+}
 
 const (
 	octopusSelector     = "testing.kyma-project.io/created-by-octopus=true"
 	octopusTestLabelKey = "testing.kyma-project.io/def-name"
 )
-
-func init() {
-	ctrllog.SetLogger(zap.New())
-	logf = ctrllog.Log.WithName("log-exporter")
-}
 
 type config struct {
 	ProjectID string
@@ -40,22 +41,47 @@ type config struct {
 }
 
 func main() {
-	logf.Error(mainerr(), "while running application")
-	os.Exit(1)
+	if err := mainerr(); err != nil {
+		logf.Fatal(err)
+	}
+	logf.Info("success!")
 }
 
 func mainerr() error {
 	conf := &config{}
-	err := envconfig.InitWithPrefix(conf, "APP")
-	if err != nil {
+	if err := envconfig.InitWithPrefix(conf, "APP"); err != nil {
 		return errors.Wrap(err, "while loading env config")
 	}
 
-	clientset, err := kubernetes.NewForConfig(ctrl.GetConfigOrDie())
+	ctx := context.Background()
+
+	pubsubClient, err := pubsub.NewClient(ctx, conf.ProjectID)
+	if err != nil {
+		return errors.Wrapf(err, "while creating new pubsub client")
+	}
+
+	client := getRestConfigOrDie()
+
+	clientset, err := kubernetes.NewForConfig(client)
 	if err != nil {
 		return errors.Wrap(err, "while creating clientset")
 	}
 
+	dynamicCli, err := dynamic.NewForConfig(client)
+	if err != nil {
+		return errors.Wrap(err, "while creating dynamicCli")
+	}
+
+	ctsCli := clustertestsuite.New(dynamicCli, 20*time.Second)
+
+	ctsList, err := ctsCli.List()
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%+v", ctsList)
+	os.Exit(0)
+
+	logf.Info("Listing test pods")
 	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{
 		LabelSelector: octopusSelector,
 	})
@@ -67,29 +93,29 @@ func mainerr() error {
 	for _, pod := range pods.Items {
 		container, err := getTestContainerName(pod)
 		if err != nil {
-			return errors.Wrapf(err, "while extracting test container name from pod %s in namespace %s", pod.GetName(), pod.GetNamespace())
+			return errors.Wrapf(err, "while extracting test container name from pod %s in namespace %s", pod.Name, pod.Namespace)
 		}
-
-		req := clientset.CoreV1().Pods(pod.GetNamespace()).GetLogs(pod.GetName(), &corev1.PodLogOptions{
+		logf.Info(fmt.Sprintf("Extracting logs from container %s from pod %s from namespace %s", container, pod.Name, pod.Namespace))
+		req := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
 			Container: container,
 		})
 
 		data, err := ConsumeRequest(req)
 		if err != nil {
-			return fmt.Errorf("while reading request from container %s in pod %s in namespace %s", container, pod.GetName(), pod.GetNamespace())
+			return errors.Wrapf(err, "while reading request from container %s in pod %s in namespace %s", container, pod.Name, pod.Namespace)
 		}
 
 		val, ok := pod.Labels[octopusTestLabelKey]
 		if !ok {
-			return fmt.Errorf("there's no `%s` label on a pod %s in namespace %s", octopusTestLabelKey, pod.GetName(), pod.GetNamespace())
+			return fmt.Errorf("there's no `%s` label on a pod %s in namespace %s", octopusTestLabelKey, pod.Name, pod.Namespace)
 		}
 
 		attributes := map[string]string{
 			"name": val,
 		}
 
-		if err := publish(os.Stdout, conf.ProjectID, conf.TopicID, attributes, data); err != nil {
-			return fmt.Errorf("while publishing message to topic %s for pod %s from namespace %s", conf.TopicID, pod.GetName(), pod.GetNamespace())
+		if err := publish(ctx, pubsubClient, conf.TopicID, attributes, data); err != nil {
+			return errors.Wrapf(err, "while publishing message to topic %s for pod %s from namespace %s", conf.TopicID, pod.Name, pod.Namespace)
 		}
 	}
 	return nil
@@ -111,13 +137,7 @@ func getTestContainerName(pod corev1.Pod) (string, error) {
 	return names[0], nil
 }
 
-func publish(w io.Writer, projectID, topicID string, attributes map[string]string, msg []byte) error {
-	ctx := context.Background()
-	client, err := pubsub.NewClient(ctx, projectID)
-	if err != nil {
-		return errors.Wrapf(err, "while creating new pubsub client")
-	}
-
+func publish(ctx context.Context, client *pubsub.Client, topicID string, attributes map[string]string, msg []byte) error {
 	t := client.Topic(topicID)
 	result := t.Publish(ctx, &pubsub.Message{
 		Data:       msg,
@@ -127,10 +147,10 @@ func publish(w io.Writer, projectID, topicID string, attributes map[string]strin
 	// ID is returned for the published message.
 	id, err := result.Get(ctx)
 	if err != nil {
-		return fmt.Errorf("Get: %v", err)
+		return errors.Wrapf(err, "while publishing message %s", id)
 	}
 
-	logf.Info("Published a message", "message", string(msg)[:50], "id", id)
+	logf.Info(fmt.Sprintf("Published a message with attributes %+v and id=%s", attributes, id))
 	return nil
 }
 
@@ -164,4 +184,20 @@ func ConsumeRequest(request restclient.ResponseWrapper) ([]byte, error) {
 			return b.Bytes(), nil
 		}
 	}
+}
+
+func getRestConfigOrDie() *restclient.Config {
+	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
+		client, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		if err != nil {
+			panic(errors.Wrap(err, "while creating restclient from KUBECONFIG"))
+		}
+		return client
+	}
+
+	client, err := restclient.InClusterConfig()
+	if err != nil {
+		panic(errors.Wrap(err, "while creating in cluster config"))
+	}
+	return client
 }
