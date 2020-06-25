@@ -11,10 +11,9 @@ import (
 
 	"cloud.google.com/go/pubsub"
 	logf "github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
-
-	"github.com/aerfio/joblogs/pkg/resources/clustertestsuite"
 
 	"github.com/pkg/errors"
 	"github.com/vrischmann/envconfig"
@@ -23,17 +22,16 @@ import (
 	"k8s.io/client-go/kubernetes"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
+
+	"github.com/aerfio/joblogs/pkg/hyperscaler"
+	"github.com/aerfio/joblogs/pkg/resources/clustertestsuite"
+	octopusTypes "github.com/aerfio/joblogs/pkg/resources/clustertestsuite/types"
 )
 
 func init() {
 	logf.SetFormatter(&logf.JSONFormatter{})
 	logf.SetOutput(os.Stdout)
 }
-
-const (
-	octopusSelector     = "testing.kyma-project.io/created-by-octopus=true"
-	octopusTestLabelKey = "testing.kyma-project.io/def-name"
-)
 
 type config struct {
 	ProjectID string
@@ -76,18 +74,34 @@ func mainerr() error {
 
 	ctsList, err := ctsCli.List()
 	if err != nil {
-		panic(err)
+		return err
 	}
-	fmt.Printf("%+v", ctsList)
-	os.Exit(0)
+
+	newestCts, err := getNewestClusterTestSuite(ctsList) // todo: write tests here
+	if err != nil {
+		return errors.Wrapf(err, "while listing ClusterTestSuites")
+	}
+
+	logf.Infof("Newest ClusterTestSuite name: %s", newestCts.Name)
 
 	logf.Info("Listing test pods")
-	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{
-		LabelSelector: octopusSelector,
+
+	selector := labels.SelectorFromSet(map[string]string{
+		octopusTypes.LabelKeyCreatedByOctopus: "true",
+		octopusTypes.LabelKeySuiteName:        newestCts.Name,
 	})
 
+	pods, err := clientset.CoreV1().Pods("").List(metav1.ListOptions{
+		LabelSelector: selector.String(),
+	})
 	if err != nil {
-		return errors.Wrapf(err, "while listing pods by %s selector", octopusSelector)
+		return errors.Wrapf(err, "while listing pods by %s selector", selector)
+	}
+	// todo: make sure results are there
+
+	platform, err := hyperscaler.GetHyperScalerPlatform(clientset)
+	if err != nil {
+		return errors.Wrap(err, "while getting runtime's hyperscaler platform")
 	}
 
 	for _, pod := range pods.Items {
@@ -105,13 +119,22 @@ func mainerr() error {
 			return errors.Wrapf(err, "while reading request from container %s in pod %s in namespace %s", container, pod.Name, pod.Namespace)
 		}
 
-		val, ok := pod.Labels[octopusTestLabelKey]
+		defName, ok := pod.Labels[octopusTypes.LabelKeyTestDefName]
 		if !ok {
-			return fmt.Errorf("there's no `%s` label on a pod %s in namespace %s", octopusTestLabelKey, pod.Name, pod.Namespace)
+			return fmt.Errorf("there's no `%s` label on a pod %s in namespace %s", octopusTypes.LabelKeyTestDefName, pod.Name, pod.Namespace)
+		}
+
+		status, err := extractTestStatus(defName, newestCts)
+		if err != nil {
+			return err
 		}
 
 		attributes := map[string]string{
-			"name": val,
+			"name":             defName,
+			"status":           string(status),
+			"clusterTestSuite": newestCts.Name,
+			"completionTime":   newestCts.Status.CompletionTime.String(),
+			"platform":         string(platform),
 		}
 
 		if err := publish(ctx, pubsubClient, conf.TopicID, attributes, data); err != nil {
@@ -190,7 +213,7 @@ func getRestConfigOrDie() *restclient.Config {
 	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
 		client, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 		if err != nil {
-			panic(errors.Wrap(err, "while creating restclient from KUBECONFIG"))
+			panic(errors.Wrapf(err, "while creating restclient based on KUBECONFIG=%s", kubeconfig))
 		}
 		return client
 	}
@@ -200,4 +223,33 @@ func getRestConfigOrDie() *restclient.Config {
 		panic(errors.Wrap(err, "while creating in cluster config"))
 	}
 	return client
+}
+
+func getNewestClusterTestSuite(ctsList octopusTypes.ClusterTestSuiteList) (octopusTypes.ClusterTestSuite, error) {
+	if len(ctsList.Items) == 0 {
+		return octopusTypes.ClusterTestSuite{}, errors.New("there's no ClusterTestSuites")
+	}
+
+	newest := ctsList.Items[0]
+
+	for _, cts := range ctsList.Items {
+		if newest.Status.CompletionTime.Before(cts.Status.CompletionTime) {
+			newest = cts
+		}
+	}
+
+	if newest.Status.CompletionTime == nil {
+		return octopusTypes.ClusterTestSuite{}, fmt.Errorf("no ClusterTestSuite has been completed yet")
+	}
+
+	return newest, nil
+}
+
+func extractTestStatus(defName string, cts octopusTypes.ClusterTestSuite) (octopusTypes.TestStatus, error) {
+	for _, result := range cts.Status.Results {
+		if defName == result.Name {
+			return result.Status, nil
+		}
+	}
+	return "", fmt.Errorf("couldn't find %s test in %s ClusterTestSuite status", defName, cts.Name)
 }
