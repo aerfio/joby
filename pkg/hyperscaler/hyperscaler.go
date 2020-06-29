@@ -30,7 +30,7 @@ func extractHyperScalerFromCm(configmap corev1.ConfigMap) (Platform, error) {
 	providerKey := "provider"
 	provider, ok := configmap.Data[providerKey]
 	if !ok {
-		return "", fmt.Errorf("%s confimap in namespace %s is malformed, there's no %s key", shootCmName, shootCmNamespace, providerKey)
+		return UnknownGardener, fmt.Errorf("%s confimap in namespace %s is malformed, there's no %s key", shootCmName, shootCmNamespace, providerKey)
 	}
 
 	switch provider {
@@ -51,6 +51,7 @@ func extractHyperScalerFromNode(node corev1.Node) Platform {
 	if strings.HasPrefix(node.Name, "aks") {
 		return Aks
 	}
+
 	return Unknown
 }
 

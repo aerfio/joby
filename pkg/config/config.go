@@ -25,7 +25,7 @@ func LoadDispatchingConfig(path string) (Dispatching, error) {
 
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
-		panic(errors.Wrapf(err, "while reading configuration from %s", path))
+		return Dispatching{}, errors.Wrapf(err, "while reading configuration from %s", path)
 	}
 
 	if err := yaml.Unmarshal(content, &dispatchingConfig); err != nil {
