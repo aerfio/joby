@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
-	ctsTypes "github.com/aerfio/joblogs/pkg/resources/clustertestsuite/types"
+	octopusTypes "github.com/aerfio/joblogs/pkg/resources/clustertestsuite/types"
 
 	"github.com/aerfio/joblogs/pkg/resources"
 
@@ -21,27 +21,27 @@ type ClusterTestSuite struct {
 
 func New(dynamicCli dynamic.Interface, waitTimeout time.Duration) *ClusterTestSuite {
 	return &ClusterTestSuite{
-		resCli:      resource.New(dynamicCli, ctsTypes.SchemeGroupVersion.WithResource("clustertestsuites"), ""),
+		resCli:      resource.New(dynamicCli, octopusTypes.SchemeGroupVersion.WithResource("clustertestsuites"), ""),
 		waitTimeout: waitTimeout,
 	}
 }
 
-func (cts ClusterTestSuite) List() (ctsTypes.ClusterTestSuiteList, error) {
+func (cts ClusterTestSuite) List() (octopusTypes.ClusterTestSuiteList, error) {
 	ul, err := cts.resCli.ResCli.List(metav1.ListOptions{})
 	if err != nil {
-		return ctsTypes.ClusterTestSuiteList{}, err
+		return octopusTypes.ClusterTestSuiteList{}, err
 	}
 
 	clusterTestSuites, err := convertFromUnstructuredToClusterTestSuiteList(&unstructured.Unstructured{Object: ul.UnstructuredContent()})
 	if err != nil {
-		return ctsTypes.ClusterTestSuiteList{}, err
+		return octopusTypes.ClusterTestSuiteList{}, err
 	}
 
 	return clusterTestSuites, nil
 }
 
-func convertFromUnstructuredToClusterTestSuiteList(u *unstructured.Unstructured) (ctsTypes.ClusterTestSuiteList, error) {
-	cts := ctsTypes.ClusterTestSuiteList{}
+func convertFromUnstructuredToClusterTestSuiteList(u *unstructured.Unstructured) (octopusTypes.ClusterTestSuiteList, error) {
+	cts := octopusTypes.ClusterTestSuiteList{}
 	err := runtime.DefaultUnstructuredConverter.FromUnstructured(u.Object, &cts)
 	return cts, err
 }

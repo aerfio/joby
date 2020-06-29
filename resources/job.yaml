@@ -1,0 +1,33 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: joby
+  labels:
+    joby: "true"
+  namespace: joby
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+        - name: log-gatherer
+          image: aerfio/joby:latest
+          imagePullPolicy: Always
+          env:
+            - name: APP_CONFIG_LOCATION
+              value: /config/config.yaml
+          envFrom:
+            - secretRef:
+                name: joby
+          volumeMounts:
+            - mountPath: /config
+              name: config-volume
+      volumes:
+        - name: config-volume
+          configMap:
+            name: joby
+      restartPolicy: Never
+      serviceAccountName: joby

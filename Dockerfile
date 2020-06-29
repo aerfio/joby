@@ -20,7 +20,7 @@ RUN go mod download
 #
 COPY . ${BASE_APP_DIR}/
 
-RUN go build -ldflags "-s -w" -a -o joby cmd/main.go \
+RUN go build -ldflags "-s -w" -a -o joby cmd/main.go cmd/mainerr.go \
     && mkdir /app \
     && mv ./joby /app/joby
 
