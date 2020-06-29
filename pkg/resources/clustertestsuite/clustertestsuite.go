@@ -7,9 +7,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/client-go/dynamic"
 
-	octopusTypes "github.com/aerfio/joblogs/pkg/resources/clustertestsuite/types"
+	octopusTypes "github.com/kyma-project/test-infra/test-log-collector/pkg/resources/clustertestsuite/types"
 
-	"github.com/aerfio/joblogs/pkg/resources"
+	"github.com/kyma-project/test-infra/test-log-collector/pkg/resources"
 
 	"k8s.io/apimachinery/pkg/runtime"
 )

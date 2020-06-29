@@ -1,4 +1,4 @@
-module github.com/aerfio/joblogs
+module github.com/kyma-project/test-infra/test-log-collector
 
 go 1.14
 

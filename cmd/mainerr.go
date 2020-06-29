@@ -14,10 +14,10 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 
-	pkgConfig "github.com/aerfio/joblogs/pkg/config"
-	"github.com/aerfio/joblogs/pkg/slack"
+	pkgConfig "github.com/kyma-project/test-infra/test-log-collector/pkg/config"
+	"github.com/kyma-project/test-infra/test-log-collector/pkg/slack"
 
-	pkgSlack "github.com/aerfio/joblogs/pkg/slack"
+	pkgSlack "github.com/kyma-project/test-infra/test-log-collector/pkg/slack"
 
 	"github.com/pkg/errors"
 	"github.com/vrischmann/envconfig"
@@ -27,10 +27,10 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	restclient "k8s.io/client-go/rest"
 
-	"github.com/aerfio/joblogs/pkg/hyperscaler"
+	"github.com/kyma-project/test-infra/test-log-collector/pkg/hyperscaler"
 
-	"github.com/aerfio/joblogs/pkg/resources/clustertestsuite"
-	octopusTypes "github.com/aerfio/joblogs/pkg/resources/clustertestsuite/types"
+	"github.com/kyma-project/test-infra/test-log-collector/pkg/resources/clustertestsuite"
+	octopusTypes "github.com/kyma-project/test-infra/test-log-collector/pkg/resources/clustertestsuite/types"
 )
 
 func init() {
