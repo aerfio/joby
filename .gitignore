@@ -3,3 +3,4 @@
 *.logs
 joblogs
 resources/secret.yaml
+test-log-collector/templates/secret.yaml

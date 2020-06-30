@@ -20,9 +20,9 @@ RUN go mod download
 #
 COPY . ${BASE_APP_DIR}/
 
-RUN go build -ldflags "-s -w" -a -o joby cmd/main.go cmd/mainerr.go \
+RUN go build -ldflags "-s -w" -a -o main cmd/main.go \
     && mkdir /app \
-    && mv ./joby /app/joby
+    && mv ./main /app/main
 
 # get latest CA certs
 FROM alpine:latest as certs
@@ -31,9 +31,9 @@ RUN apk --update add ca-certificates
 # result container
 FROM scratch
 
-LABEL source = git@github.com:kyma-project/kyma.git
+LABEL source = git@github.com:kyma-project/test-infra.git
 
 COPY --from=builder /app /app
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-ENTRYPOINT ["/app/joby"]
+ENTRYPOINT ["/app/main"]
