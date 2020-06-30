@@ -1,13 +1,20 @@
 package main
 
 import (
+	"os"
+
 	logf "github.com/sirupsen/logrus"
 
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"github.com/kyma-project/test-infra/test-log-collector/cmd/app"
 )
 
+func init() {
+	logf.SetFormatter(&logf.JSONFormatter{})
+	logf.SetOutput(os.Stdout)
+}
+
 func main() {
-	if err := mainerr(); err != nil {
+	if err := app.Mainerr(); err != nil {
 		logf.Fatal(err)
 	}
 	logf.Info("success!")

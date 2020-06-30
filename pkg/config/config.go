@@ -57,6 +57,15 @@ func (d Dispatching) GetConfigByName(name string) (LogsScrapingConfig, error) {
 	return LogsScrapingConfig{}, fmt.Errorf("there's no configuration for %s test case", name)
 }
 
+func (d Dispatching) GetConfigByNameWithFallback(name string) (LogsScrapingConfig, error) {
+	config, err := d.GetConfigByName(name)
+	if err == nil {
+		return config, err
+	}
+
+	return d.GetConfigByName("default")
+}
+
 func (d Dispatching) Validate() error {
 	for _, config := range d.Config {
 		if !strings.HasPrefix(config.ChannelName, "#") {

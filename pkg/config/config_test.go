@@ -257,3 +257,47 @@ func TestDispatching_Validate(t *testing.T) {
 		})
 	}
 }
+
+func TestDispatching_GetConfigByNameWithFallback(t *testing.T) {
+	type fields struct {
+		Config []LogsScrapingConfig
+	}
+	type args struct {
+		name string
+	}
+	tests := []struct {
+		name    string
+		fields  fields
+		args    args
+		want    LogsScrapingConfig
+		wantErr bool
+	}{
+		{
+			name: "return default config if there's not config that fits criteria",
+			fields: fields{Config: []LogsScrapingConfig{
+				{TestCases: []string{"test-name1"}, ChannelName: "test-name1"},
+				{TestCases: []string{"test-name2"}, ChannelName: "test-name2"},
+				{TestCases: []string{"test-name3"}, ChannelName: "something"},
+				{TestCases: []string{"default"}, ChannelName: "something-default"},
+			}},
+			args:    args{name: "test-name4"},
+			want:    LogsScrapingConfig{TestCases: []string{"default"}, ChannelName: "something-default"},
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := Dispatching{
+				Config: tt.fields.Config,
+			}
+			got, err := d.GetConfigByNameWithFallback(tt.args.name)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetConfigByNameWithFallback() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("GetConfigByNameWithFallback() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

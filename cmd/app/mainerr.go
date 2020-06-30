@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"bufio"
@@ -33,17 +33,12 @@ import (
 	octopusTypes "github.com/kyma-project/test-infra/test-log-collector/pkg/resources/clustertestsuite/types"
 )
 
-func init() {
-	logf.SetFormatter(&logf.JSONFormatter{})
-	logf.SetOutput(os.Stdout)
-}
-
 type config struct {
 	SlackToken     string
 	ConfigLocation string
 }
 
-func mainerr() error {
+func Mainerr() error {
 	conf := &config{}
 	if err := envconfig.InitWithPrefix(conf, "APP"); err != nil {
 		return errors.Wrap(err, "while loading env config")
@@ -99,7 +94,6 @@ func mainerr() error {
 	if err != nil {
 		return errors.Wrapf(err, "while listing pods by %s selector", selector)
 	}
-	// todo: make sure results are there
 
 	platform, err := hyperscaler.GetHyperScalerPlatform(clientset)
 	if err != nil {
@@ -114,7 +108,7 @@ func mainerr() error {
 			return fmt.Errorf("there's no `%s` label on a pod %s in namespace %s", octopusTypes.LabelKeyTestDefName, pod.Name, pod.Namespace)
 		}
 
-		testConfig, err := dispatchingConfig.GetConfigByName(testName)
+		testConfig, err := dispatchingConfig.GetConfigByNameWithFallback(testName)
 		if err != nil {
 			return errors.Wrapf(err, "while getting dispatching config for %s test suite", testName)
 		}
